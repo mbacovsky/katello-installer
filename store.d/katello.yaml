@@ -1,0 +1,5 @@
+---
+  :katello_server_name: Katello
+  :katello_installer_scenario: katello
+  :smartproxy_name: Capsule
+  :installer_name: foreman-installer

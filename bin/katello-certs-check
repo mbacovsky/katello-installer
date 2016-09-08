@@ -1,122 +1,103 @@
-#!/usr/bin/env bash
+#!/usr/bin/env ruby
+require 'kafo/store'
+require 'clamp'
 
-function usage () {
-  cat <<HELP >&2
-Verifies, that custom ssl cert files are usable
-as part of the Katello installation.
+Clamp do
 
-usage: $0 -c CERT_FILE -k KEY_FILE -r REQ_FILE -b CA_BUNDLE_FILE
-HELP
-}
+  def self.store
+    @store ||= Kafo::Store.new('/etc/foreman-installer/store.d')
+  end
 
-while getopts "c:k:r:b:" opt; do
-    case $opt in
-        c)
-            CERT_FILE="$(readlink -f $OPTARG)"
-            ;;
-        k)
-            KEY_FILE="$(readlink -f $OPTARG)"
-            ;;
-        r)
-            REQ_FILE="$(readlink -f $OPTARG)"
-            ;;
-        b)
-            CA_BUNDLE_FILE="$(readlink -f $OPTARG)"
-            ;;
-        h)
-            usage
-            exit 0
-            ;;
-        ?)
-            usage
-            exit 1
-            ;;
-    esac
-done
+  self.description = "Verifies, that custom ssl cert files are usable " \
+    "as part of the #{store.get(:katello_server_name)} installation."
 
-EXIT_CODE=0
+  option ["-c", "--cert"], "CERT_FILE", "path to certificate", :required => true
+  option ["-k", "--key"], "KEY_FILE", "path to key", :required => true
+  option ["-r", "--req"], "REQ_FILE", "path to certificate request"
+  option ["-b", "--bundle"], "CA_BUNDLE_FILE", "path to CA bundle", :required => true
 
-if [ -z "$CERT_FILE" -o -z "$KEY_FILE" -o -z "$CA_BUNDLE_FILE" ]; then
-    echo "One of the required parameters missing" >&2
-    usage
-    exit 1
-fi
+  def success
+    puts "[OK]"
+  end
 
-function error () {
-    echo "[FAIL]"
-    CURRENT_EXIT_CODE=$1
-    EXIT_CODE=$((EXIT_CODE|CURRENT_EXIT_CODE))
-    echo $2 >&2
-}
+  def error(current_exit_code, message)
+    puts "[FAIL]"
+    @exit_code = current_exit_code if @exit_code == 0
+    STDERR.puts message
+  end
 
-function success () {
-    echo "[OK]"
-}
+  def show_details
+    print "Validating the certificate "
+    system("openssl x509 -noout -subject -in #{cert}")
+  end
 
-function show-details () {
-    printf "Validating the certificate "
-    CERT_SUBJECT=$(openssl x509 -noout -subject -in $CERT_FILE)
-    echo $CERT_SUBJECT
-}
-
-function check-priv-key () {
-    printf "Check private key matches the certificate: "
-    CERT_MOD=$(openssl x509 -noout -modulus -in $CERT_FILE)
-    KEY_MOD=$(openssl rsa -noout -modulus -in $KEY_FILE)
-    if [ "$CERT_MOD" != "$KEY_MOD" ]; then
-        error 2 "The $KEY_FILE does not match the $CERT_FILE"
+  def check_priv_key
+    print "Check private key matches the certificate: "
+    cert_mod = `openssl x509 -noout -modulus -in "#{cert}" 2>&1`
+    key_mod = `openssl rsa -noout -modulus -in "#{key}" 2>&1`
+    if cert_mod == key_mod
+      success
     else
-        success
-    fi
-}
+      puts "The #{key} does not match the #{cert}"
+      error(2, "Cert modulus: #{cert_mod}\nKey modulus: #{key_mod}")
+    end
+  end
 
-function check-ca-bundle () {
-    printf "Check ca bundle verifies the cert file: "
-    CHECK=$(openssl verify -CAfile $CA_BUNDLE_FILE -purpose sslserver -verbose $CERT_FILE 2>&1)
-    if [ $? == "0" ]; then
-        success
-    else
-        error 4  "The $CA_BUNDLE_FILE does not verify the $CERT_FILE"
-        echo $CHECK
-    fi
-}
+  def check_ca_bundle
+      print "Check ca bundle verifies the cert file: "
+      result = system("openssl verify -CAfile #{bundle} -purpose sslserver -verbose #{cert} 2>&1 > /dev/null")
+      if result
+          success
+      else
+          puts "The #{bundle} does not verify the #{cert}"
+          error(4, `openssl verify -CAfile "#{bundle}" -purpose sslserver -verbose "#{cert}" 2>&1`)
+      end
+  end
 
-show-details
-check-priv-key
-check-ca-bundle
+  def store
+    self.class.store
+  end
 
-if [ $EXIT_CODE == "0" ]; then
-    cat <<EOF
-
+  def success_message
+    return <<EOF
 Validation succeeded.
 
-To install the Katello main server with the custom certificates, run:
+    To install the #{store.get(:katello_server_name)} main server with the custom certificates, run:
 
-    foreman-installer --scenario katello\\
-                      --certs-server-cert "$(readlink -f $CERT_FILE)"\\
-                      --certs-server-cert-req "$(readlink -f $REQ_FILE)"\\
-                      --certs-server-key "$(readlink -f $KEY_FILE)"\\
-                      --certs-server-ca-cert "$(readlink -f $CA_BUNDLE_FILE)"
+        #{store.get(:installer_name)} --scenario #{store.get(:katello_installer_scenario)}\\
+                          --certs-server-cert "#{cert}"\\
+                          --certs-server-cert-req "#{req}"\\
+                          --certs-server-key "#{key}"\\
+                          --certs-server-ca-cert "#{bundle}"
 
-To update the certificates on a currently running Katello installation, run:
+    To update the certificates on a currently running #{store.get(:katello_server_name)} installation, run:
 
-    foreman-installer --scenario katello\\
-                      --certs-server-cert "$(readlink -f $CERT_FILE)"\\
-                      --certs-server-cert-req "$(readlink -f $REQ_FILE)"\\
-                      --certs-server-key "$(readlink -f $KEY_FILE)"\\
-                      --certs-server-ca-cert "$(readlink -f $CA_BUNDLE_FILE)"\\
-                      --certs-update-server --certs-update-server-ca
+        #{store.get(:installer_name)} --scenario #{store.get(:katello_installer_scenario)}\\
+                          --certs-server-cert "#{cert}"\\
+                          --certs-server-cert-req "#{req}"\\
+                          --certs-server-key "#{key}"\\
+                          --certs-server-ca-cert "#{bundle}"\\
+                          --certs-update-server --certs-update-server-ca
 
-To use them inside a \$CAPSULE, run this command INSTEAD:
+    To use them inside a \$CAPSULE, run this command INSTEAD:
 
-    capsule-certs-generate --capsule-fqdn "$CAPSULE"\\
-                           --certs-tar  "~/$CAPSULE-certs.tar"\\
-                           --server-cert "$(readlink -f $CERT_FILE)"\\
-                           --server-cert-req "$(readlink -f $REQ_FILE)"\\
-                           --server-key "$(readlink -f $KEY_FILE)"\\
-                           --server-ca-cert "$(readlink -f $CA_BUNDLE_FILE)"\\
-                           --certs-update-server
+        capsule-certs-generate --capsule-fqdn "$CAPSULE"\\
+                          --certs-tar  "~/$CAPSULE-certs.tar"\\
+                          --server-cert "#{cert}"\\
+                          --server-cert-req "#{req}"\\
+                          --server-key "#{key}"\\
+                          --server-ca-cert "#{bundle}"\\
+                          --certs-update-server
 EOF
-else
-    exit $EXIT_CODE
-fi
+  end
+
+  def execute
+    @exit_code = 0
+    show_details
+    check_priv_key
+    check_ca_bundle
+
+    puts success_message if @exit_code == 0
+    exit(@exit_code)
+  end
+end

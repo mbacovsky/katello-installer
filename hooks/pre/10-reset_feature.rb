@@ -9,7 +9,7 @@ def reset
     reset_pulp
 
   else
-    Kafo::KafoConfigure.logger.warn 'Katello not installed yet, can not drop database!'
+    Kafo::KafoConfigure.logger.warn "#{@kafo.store.get(:katello_server_name)} not installed yet, can not drop database!"
   end
 end
 

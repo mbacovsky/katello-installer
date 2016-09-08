@@ -39,6 +39,7 @@ class CapsuleCertsGenerate
               <<-EOF
                 :log_level: :debug
                 :log_dir: /var/log
+                :store_dir: /etc/foreman-installer/store.d
                 :log_name: capsule-certs-generate.log
                 :no_prefix: true
                 :answer_file: #{answers_file.path}

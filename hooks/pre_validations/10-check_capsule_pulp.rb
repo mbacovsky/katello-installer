@@ -6,7 +6,7 @@ end
 
 if param('capsule', 'pulp') && param('capsule', 'pulp').value
   if system("rpm -q katello &>/dev/null")
-    error "the pulp node can't be installed on a machine with Katello master"
+    error "the pulp node can't be installed on a machine with #{@kafo.store.get(:katello_server_name)} master"
   end
 
   if system("(rpm -q ipa-server || rpm -q freeipa-server) &>/dev/null")
@@ -14,6 +14,6 @@ if param('capsule', 'pulp') && param('capsule', 'pulp').value
   end
 
   unless system("subscription-manager identity &>/dev/null && ! grep -q subscription.rhn.redhat.com /etc/rhsm/rhsm.conf &> /dev/null")
-    error "The system has to be registered to a Katello instance before installing the node"
+    error "The system has to be registered to a #{@kafo.store.get(:katello_server_name)} instance before installing the node"
   end
 end
