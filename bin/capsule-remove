@@ -1,3 +1,22 @@
+#!/usr/bin/env ruby
+require 'kafo/store'
+require 'clamp'
+
+Clamp do
+
+  def store
+    @store ||= Kafo::Store.new('/etc/foreman-installer/store.d')
+  end
+
+  self.description = "This script is used to remove all capsule related packages and services. \n" \
+    "This should only be used if you are sure you are wanting to completely remove Capsule from this machine and lose all of your settings and synced content. \n" \
+    "Optional flags:\n--unattended this option will start the removal process without any warnings or confirmations."
+
+  option ["--unattended"], :flag, "start the removal process without any warnings or confirmations", :default => false
+
+end
+
+doc = <<EOF
 #!/bin/bash
 
 LOG="/var/log/capsule-clean.log"
@@ -45,9 +64,9 @@ LOG_FILES=(
     /var/log/squid
 )
 # Setting a variable to make sure we actually grab the FQDN of the capsule incase there are other packages that have a short hostname in them.
- 
+
 FQDN=$( hostname -f)
- 
+
 RPMS=(
     `rpm -qa | grep puppetlabs-release`
     `rpm -qa | grep foreman-release`
@@ -93,23 +112,23 @@ CERT_FILES=(
     /root/ssl-build
     /var/www/html/pub/katello-ca*.rpm
 )
- 
+
 # stopping all katello/foreman related services
- 
+
   echo "Stopping Katello Capsule Services"		| tee -a $LOG
   katello-service stop					| tee -a $LOG
- 
+
   echo "Removing RPMs"					| tee -a $LOG
   yum erase -y ${RPMS[*]}				| tee -a $LOG
- 
+
   echo "Cleaning up configuration files"		| tee -a $LOG
-  # Conf files				
+  # Conf files
   rm -rf ${CONFIG_FILES[*]}				| tee -a $LOG
- 
+
   echo "Cleaning up log files"				| tee -a $LOG
   # logs
   rm -rf ${LOG_FILES[*]}				| tee -a $LOG
- 
+
   echo "Cleaning up Certs"				| tee -a $LOG
   # pulp cert stuff
   rm -rf ${CERT_FILES[*]}				| tee -a $LOG
@@ -117,7 +136,7 @@ CERT_FILES=(
 
 menu()
 {
-  clear 
+  clear
   echo ""
   echo "WARNING: This script will erase many packages and config files."
   echo "Important packages such as the following will be removed:"
@@ -141,7 +160,7 @@ menu()
       echo "** cancelled **"
       exit 1
   fi
- 
+
   echo ""
   echo "ARE YOU SURE?: This script permanently deletes data and configuration."
   read -p "Read the source for a list of what is removed.  Type [remove] to continue? " -r
@@ -159,11 +178,11 @@ menu()
 # In case of --help or -h
 for var in $@; do
    if [[ $var == "--help" || $var == "-h" ]]
-       then 
+       then
            echo -e "This script is used to remove all capsule related packages and services. \nThis should only be used if you are sure you are wanting to completely remove Capsule from this machine and lose all of your settings and synced content. \nOptional flags:\n--unattended this option will start the removal process without any warnings or confirmations."
            exit 1
    fi
-   if [[ $var == "--unattended" ]]  
+   if [[ $var == "--unattended" ]]
        then
            remove
            exit
@@ -172,3 +191,4 @@ done
 
 # Principal
 menu
+EOF
