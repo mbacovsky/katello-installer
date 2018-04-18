@@ -42,19 +42,61 @@ def reset_candlepin
   Kafo::Helpers.execute(commands)
 end
 
+def empty_mongo
+  mongo_config = load_mongo_config
+  if remote_host?(mongo_config[:host])
+    empty_remote_mongo(mongo_config)
+  else
+    Kafo::Helpers.execute(
+      [
+        'service-wait mongod stop',
+        'rm -f /var/lib/mongodb/pulp_database*',
+        'service-wait mongod start'
+      ]
+    )
+  end
+end
+
+def load_mongo_config
+  config = {}
+  seeds = param('katello', 'pulp_db_seeds').value
+  host, port = seeds.split(':') if seeds
+  config[:host] = host || 'localhost'
+  config[:port] = port || '27017'
+  config[:database] = param('katello', 'pulp_db_name').value || 'pulp_database'
+  config[:username] = param('katello', 'pulp_db_username').value
+  config[:password] = param('katello', 'pulp_db_password').value
+  config[:ssl] = param('katello', 'pulp_db_ssl').value || false
+  config[:ca_path] = param('katello', 'pulp_db_ca_path').value
+  config
+end
+
+def empty_remote_mongo(config)
+  ssl = "--ssl" if config[:ssl]
+  ca_cert = "--sslCAFile #{config[:ca_path]}" if config[:ca_path]
+  credentials = "-u #{config[:username]} -p #{config[:password]}"
+  host = "--host #{config[:host]} --port #{config[:port]}"
+  cmd = "mongo #{credentials} #{host} #{ssl} #{ca_cert} --eval \"db.dropDatabase();\" #{config[:database]}"
+  Kafo::Helpers.execute(cmd)
+end
+
 def reset_pulp
   Kafo::KafoConfigure.logger.info 'Dropping Pulp database!'
 
-  commands = [
-    'rm -f /var/lib/pulp/init.flag',
-    'service-wait httpd stop',
-    'service-wait mongod stop',
-    'rm -f /var/lib/mongodb/pulp_database*',
-    'service-wait mongod start',
+  Kafo::Helpers.execute(
+    [
+      'rm -f /var/lib/pulp/init.flag',
+      'service-wait httpd stop'
+    ]
+  )
+  empty_mongo
+  Kafo::Helpers.execute(
     'rm -rf /var/lib/pulp/{distributions,published,repos}/*'
-  ]
+  )
+end
 
-  Kafo::Helpers.execute(commands)
+def remote_host?(hostname)
+  !['localhost', '127.0.0.1', `hostname`.strip].include?(hostname)
 end
 
 if app_value(:reset) && !app_value(:noop)
